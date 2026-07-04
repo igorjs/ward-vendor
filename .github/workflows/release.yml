@@ -7,9 +7,11 @@
 # -----------------
 # - All third-party actions pinned to commit SHAs (immune to tag-swap).
 # - Top-level `permissions: {}` then promoted per-job, least privilege.
-# - StepSecurity harden-runner active on every job in audit mode. Flip
-#   to `egress-policy: block` after a few clean runs confirm the
-#   allow-list is complete.
+# - StepSecurity harden-runner active on every job: `block` with an
+#   explicit allow-list on the gh-CLI-only jobs, `audit` on the
+#   build/publish jobs until their egress set (rustup, crates.io,
+#   Homebrew/apt, Sigstore, artifact storage) is confirmed from run
+#   insights and can be allow-listed without breaking releases.
 # - Two-layer provenance for SLSA v1.0 Build L3 conformance:
 #   (1) Per-artefact in-toto attestation via actions/attest-build-
 #       provenance, signed by Sigstore + GitHub OIDC, generated inside
@@ -36,8 +38,8 @@
 # - Upstream tarball SHAs verified inside build.sh against
 #   upstream-checksums.txt (file pinned in this repo, refreshed by the
 #   watcher).
-# - Rust toolchain pinned to a specific version so a future regression
-#   in `stable` can't poison a Saturday-morning release.
+# - Rust toolchain deliberately follows `stable` (rationale on the
+#   toolchain step); the installer action itself is SHA-pinned.
 # - Release job verifies all three matrix tarballs are present before
 #   touching checksums.txt; partial failures don't leave a half-truthful
 #   file in main.
@@ -600,7 +602,10 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
 
       - name: Open or update the pipeline-failure issue
         env:

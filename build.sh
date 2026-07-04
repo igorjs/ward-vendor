@@ -42,7 +42,8 @@
 #   1   Unknown / unsupported target triple.
 #   2   Dependency missing.
 #   3   Upstream download or build failed.
-#   4   Relocation failed.
+#   4   Relocation failed or relocation verification failed.
+#   5   Smoke test failed (staged libkrun could not be dlopened).
 
 set -euo pipefail
 
@@ -319,13 +320,27 @@ if [[ "${TARGET}" == *darwin* ]]; then
     install_name_tool -id "@rpath/${lib}.${DYLIB_EXT}" "$target_file" || exit 4
   done
   # libkrun loads libkrunfw at runtime, rewrite its LC_LOAD_DYLIB
-  # entry to @rpath too. The original path varies; cover common ones.
-  for libkrun_file in "${STAGE}/lib/libkrun.${DYLIB_EXT}" "${STAGE}/lib/libkrun.${DYLIB_EXT}."*; do
-    [[ -f "$libkrun_file" && ! -L "$libkrun_file" ]] || continue
-    otool -L "$libkrun_file" | awk 'NR>1 && /libkrunfw/ {print $1}' | while read -r ref; do
-      install_name_tool -change "$ref" "@rpath/libkrunfw.${DYLIB_EXT}" "$libkrun_file" || true
-    done
-  done
+  # entry to @rpath too. Resolve the symlink chain to the real dylib:
+  # macOS versioned names are infix (libkrun.1.dylib), so the previous
+  # `libkrun.dylib.*` glob matched nothing and the rewrite silently
+  # never ran (the `|| true` hid any failure as well). The verification
+  # section below now asserts the result either way.
+  libkrun_real="$(realpath "${STAGE}/lib/libkrun.${DYLIB_EXT}")"
+  # Capture the references before rewriting: mutating the file while
+  # otool's output is still being consumed is a race.
+  fw_refs="$(otool -L "$libkrun_real" | awk 'NR>1 && /libkrunfw/ {print $1}')"
+  while read -r ref; do
+    [[ -z "$ref" || "$ref" == "@rpath/libkrunfw.${DYLIB_EXT}" ]] && continue
+    install_name_tool -change "$ref" "@rpath/libkrunfw.${DYLIB_EXT}" "$libkrun_real" || exit 4
+  done <<< "$fw_refs"
+  # Add an @loader_path rpath to libkrun itself so its @rpath/libkrunfw
+  # reference resolves next to it. Consumers still embed an rpath to
+  # find libkrun, but libkrun finding libkrunfw no longer depends on
+  # the consumer's rpath also covering the second hop. Guarded because
+  # install_name_tool errors on a duplicate rpath entry.
+  if ! otool -l "$libkrun_real" | grep -q 'path @loader_path '; then
+    install_name_tool -add_rpath "@loader_path" "$libkrun_real" || exit 4
+  fi
 else
   # Linux: set RUNPATH = $ORIGIN so the loader looks next to the .so.
   for lib in libkrun libkrunfw; do
@@ -348,6 +363,69 @@ else
     fi
     patchelf --set-rpath '$ORIGIN' "$target_file" || exit 4
   done
+fi
+
+# ---------------------------------------------------------------------------
+# 4.5) Verify relocation. A failed install_name_tool/patchelf run would
+#      otherwise ship a signed, attested tarball that dlopen-fails on
+#      the consumer's machine.
+# ---------------------------------------------------------------------------
+
+echo "==> Verifying relocated install names"
+if [[ "${TARGET}" == *darwin* ]]; then
+  for lib in libkrun libkrunfw; do
+    real="$(realpath "${STAGE}/lib/${lib}.${DYLIB_EXT}")"
+    id="$(otool -D "$real" | tail -1)"
+    if [[ "$id" != "@rpath/${lib}.${DYLIB_EXT}" ]]; then
+      echo "error: ${lib} install name is '${id}', expected '@rpath/${lib}.${DYLIB_EXT}'" >&2
+      exit 4
+    fi
+  done
+  libkrun_real="$(realpath "${STAGE}/lib/libkrun.${DYLIB_EXT}")"
+  if otool -L "$libkrun_real" | awk 'NR>1 {print $1}' | grep -E '^/(Users|private|opt|home)/'; then
+    echo "error: libkrun still references build-machine absolute paths (see above)" >&2
+    exit 4
+  fi
+  if ! otool -L "$libkrun_real" | awk 'NR>1 {print $1}' | grep -q "^@rpath/libkrunfw\.${DYLIB_EXT}$"; then
+    echo "error: libkrun does not reference @rpath/libkrunfw.${DYLIB_EXT}" >&2
+    otool -L "$libkrun_real" >&2
+    exit 4
+  fi
+else
+  for lib in libkrun libkrunfw; do
+    real="$(realpath "${STAGE}/lib/${lib}.${DYLIB_EXT}")"
+    runpath="$(patchelf --print-rpath "$real")"
+    if [[ "$runpath" != '$ORIGIN' ]]; then
+      echo "error: ${lib} RUNPATH is '${runpath}', expected '\$ORIGIN'" >&2
+      exit 4
+    fi
+  done
+fi
+echo "==> Relocation verified"
+
+# ---------------------------------------------------------------------------
+# 4.6) Smoke test: dlopen the staged libkrun and resolve a symbol.
+#      Native builds only: TARGET may name a triple this host can't
+#      load. libkrunfw resolves beside libkrun via @loader_path (macOS)
+#      or $ORIGIN (Linux), so no loader env vars are needed, which also
+#      makes this exercise the same path consumers use.
+# ---------------------------------------------------------------------------
+
+HOST_TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+if [[ "${TARGET}" != "${HOST_TRIPLE}" ]]; then
+  echo "==> Skipping dlopen smoke test (cross-target ${TARGET} on ${HOST_TRIPLE})"
+elif ! command -v python3 > /dev/null 2>&1; then
+  echo "==> Skipping dlopen smoke test (python3 not available)"
+else
+  echo "==> dlopen smoke test"
+  SMOKE_LIB="$(realpath "${STAGE}/lib/libkrun.${DYLIB_EXT}")" python3 - <<'PYEOF' || exit 5
+import ctypes, os, sys
+lib = ctypes.CDLL(os.environ["SMOKE_LIB"])
+if not hasattr(lib, "krun_create_ctx"):
+    print("error: krun_create_ctx not exported by staged libkrun", file=sys.stderr)
+    sys.exit(1)
+print("dlopen OK, krun_create_ctx resolved")
+PYEOF
 fi
 
 # ---------------------------------------------------------------------------
