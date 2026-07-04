@@ -185,7 +185,6 @@ Manual dispatches via the Actions tab work the same way and accept a
 ├── build.sh                          builds for the host platform
 ├── checksums.txt                     SHAs of the published vendor tarballs
 └── .github/
-    ├── CODEOWNERS                    review enforcement for sensitive paths
     ├── dependabot.yml                weekly bumps for SHA-pinned actions
     └── workflows/
         ├── release.yml               build matrix + publish + checksums sync

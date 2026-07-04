@@ -21,7 +21,6 @@ on:
     paths:
       - .github/workflows/**
       - .github/dependabot.yml
-      - .github/CODEOWNERS
 
 permissions: {}
 
