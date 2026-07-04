@@ -408,7 +408,14 @@ jobs:
       - name: Download SLSA L3 provenance
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: ${{ needs.slsa_provenance.outputs.provenance-download-name }}
+          # generator_generic_slsa3.yml@v2.1.0 exposes no artifact-name
+          # output (its only workflow-level output is `release-id`), so
+          # referencing `provenance-download-name` evaluated to empty
+          # and download-artifact silently fell back to downloading ALL
+          # artifacts into per-artifact subdirectories. The artifact
+          # name is deterministic anyway: it's the `provenance-name`
+          # input passed to the generator above.
+          name: libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}.intoto.jsonl
           path: dist
 
       - name: Verify all three targets present
