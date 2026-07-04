@@ -18,7 +18,9 @@
 # -----------------
 # - All actions pinned to commit SHAs.
 # - Top-level `permissions: {}`, promoted per job.
-# - harden-runner in audit mode.
+# - harden-runner in block mode with an explicit egress allow-list:
+#   this job holds the App installation token, so a compromised step
+#   can't exfiltrate it to an arbitrary host.
 # - When bumping a version pin, also computes the SHA-256 of every
 #   upstream tarball that build.sh will fetch, so an upstream tamper
 #   between watch-time and build-time fails loud instead of flowing
@@ -64,7 +66,16 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          # Everything this job talks to: the GitHub API (gh + App
+          # token mint), git-over-https checkout, source tarballs via
+          # codeload, and release assets via the two CDN hosts.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
@@ -243,7 +254,10 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
 
       - name: Open or update the pipeline-failure issue
         env:
