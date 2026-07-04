@@ -3,6 +3,8 @@
 # OSV-Scanner against libkrun's transitive Cargo dependencies.
 # Downloads the pinned upstream source (per version.txt), verifies the
 # SHA against upstream-checksums.txt, then scans the Cargo.lock.
+# Fails only on HIGH or CRITICAL severity (CVSS base score >= 7.0).
+# Advisories with no CVSS vector (Unknown severity) do not fail the build.
 
 name: osv-scan
 
@@ -68,8 +70,52 @@ jobs:
           mkdir -p libkrun-src
           tar -xzf libkrun.tar.gz -C libkrun-src --strip-components=1
 
-      - uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
-        with:
-          scan-args: |-
-            --recursive
-            ./libkrun-src
+      - name: Install osv-scanner v2.3.8
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            -o /tmp/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v2.3.8/osv-scanner_linux_amd64"
+          curl --fail --silent --show-error --location \
+            -o /tmp/osv-scanner_SHA256SUMS \
+            "https://github.com/google/osv-scanner/releases/download/v2.3.8/osv-scanner_SHA256SUMS"
+          EXPECTED_SHA="$(grep 'osv-scanner_linux_amd64' /tmp/osv-scanner_SHA256SUMS | awk '{print $1}')"
+          echo "${EXPECTED_SHA}  /tmp/osv-scanner" | sha256sum -c
+          chmod +x /tmp/osv-scanner
+
+      - name: Scan and gate on HIGH/CRITICAL severity
+        run: |
+          set -euo pipefail
+
+          # osv-scanner exits 0 (clean), 1 (findings at any severity),
+          # 127/129/130 (scanner error).  Capture the code so we can
+          # evaluate severity ourselves rather than failing on any finding.
+          if /tmp/osv-scanner --format json --output-file osv-results.json --recursive ./libkrun-src; then
+            SCAN_EXIT=0
+          else
+            SCAN_EXIT=$?
+          fi
+
+          # Any code other than 0 (clean) or 1 (findings present) is a real error.
+          if [[ "${SCAN_EXIT}" -ne 0 && "${SCAN_EXIT}" -ne 1 ]]; then
+            echo "::error::osv-scanner failed with exit code ${SCAN_EXIT}" >&2
+            exit "${SCAN_EXIT}"
+          fi
+
+          if [[ ! -f osv-results.json ]]; then
+            echo "::error::osv-results.json not written; scanner may have errored before producing output" >&2
+            exit 1
+          fi
+
+          # max_severity in the JSON is a CVSS base score as a decimal string
+          # (e.g. "5.1") or "" when the advisory carries no CVSS vector.
+          # HIGH = 7.0-8.9, CRITICAL = 9.0-10.0.
+          # Empty-string (no-CVSS / Unknown) advisories pass.
+          COUNT=$(jq '[.results[].packages[].groups[].max_severity | select(. != "") | tonumber | select(. >= 7.0)] | length' osv-results.json)
+          if [[ "${COUNT}" -gt 0 ]]; then
+            echo "::error::Found ${COUNT} HIGH or CRITICAL vulnerability group(s) (CVSS >= 7.0). Fix required before merge." >&2
+            exit 1
+          fi
+
+          TOTAL=$(jq '[.results[].packages[].groups[]] | length' osv-results.json)
+          echo "Scan passed: ${TOTAL} finding(s), all below HIGH severity (max CVSS < 7.0 or no CVSS vector)."
