@@ -383,7 +383,6 @@ jobs:
   osv_gate:
     permissions:
       contents: read
-      security-events: write
     uses: ./.github/workflows/osv-scan.yml
 
   # ── Publish all targets in one release ────────────────────────────

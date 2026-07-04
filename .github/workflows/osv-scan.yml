@@ -10,8 +10,8 @@
 # pull_request trigger must NOT be path-filtered: a required check that
 # never reports leaves the PR stuck in "Expected" and blocks auto-merge
 # (same failure mode that stalled the watch-upstream bump PRs on
-# actionlint/codeql). The scan costs a few minutes, so it simply runs
-# on every PR against the pinned version.
+# actionlint). The scan costs a few minutes, so it simply runs on
+# every PR against the pinned version.
 
 name: osv-scan
 
@@ -40,9 +40,10 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    # contents: read only. Nothing here uploads SARIF; the gate is the
+    # job's own exit code, so security-events: write was a dead grant.
     permissions:
       contents: read
-      security-events: write
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:

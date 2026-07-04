@@ -191,7 +191,6 @@ Manual dispatches via the Actions tab work the same way and accept a
         ├── watch-upstream.yml        daily upstream watcher
         ├── osv-scan.yml              OSV scan of libkrun's Cargo.lock, on every PR
         ├── lint.yml                  actionlint, on every PR
-        ├── codeql.yml                CodeQL `actions` analyser, on every PR
         └── dependabot-auto-merge.yml auto-merge for Dependabot patch/minor bumps
 ```
 
