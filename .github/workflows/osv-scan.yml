@@ -27,6 +27,9 @@ on:
   schedule:
     - cron: "0 5 * * 1"
   workflow_dispatch:
+  # Callable from release.yml, so publishing gates on the same scan
+  # that gates PR merges and the two can't drift.
+  workflow_call:
 
 permissions: {}
 

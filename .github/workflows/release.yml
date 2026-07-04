@@ -7,9 +7,11 @@
 # -----------------
 # - All third-party actions pinned to commit SHAs (immune to tag-swap).
 # - Top-level `permissions: {}` then promoted per-job, least privilege.
-# - StepSecurity harden-runner active on every job in audit mode. Flip
-#   to `egress-policy: block` after a few clean runs confirm the
-#   allow-list is complete.
+# - StepSecurity harden-runner active on every job: `block` with an
+#   explicit allow-list on the gh-CLI-only jobs, `audit` on the
+#   build/publish jobs until their egress set (rustup, crates.io,
+#   Homebrew/apt, Sigstore, artifact storage) is confirmed from run
+#   insights and can be allow-listed without breaking releases.
 # - Two-layer provenance for SLSA v1.0 Build L3 conformance:
 #   (1) Per-artefact in-toto attestation via actions/attest-build-
 #       provenance, signed by Sigstore + GitHub OIDC, generated inside
@@ -36,8 +38,8 @@
 # - Upstream tarball SHAs verified inside build.sh against
 #   upstream-checksums.txt (file pinned in this repo, refreshed by the
 #   watcher).
-# - Rust toolchain pinned to a specific version so a future regression
-#   in `stable` can't poison a Saturday-morning release.
+# - Rust toolchain deliberately follows `stable` (rationale on the
+#   toolchain step); the installer action itself is SHA-pinned.
 # - Release job verifies all three matrix tarballs are present before
 #   touching checksums.txt; partial failures don't leave a half-truthful
 #   file in main.
@@ -69,10 +71,12 @@ on:
 permissions: {}
 
 concurrency:
-  # Serialise releases for the same libkrun version. Manual dispatch
-  # + watcher dispatch racing each other would otherwise both try to
-  # publish the same tag.
-  group: release-${{ github.workflow }}-${{ inputs.version_override || github.sha }}
+  # Serialise ALL release runs. The version isn't known until
+  # resolve-version reads version.txt, so a per-version group isn't
+  # expressible here; the previous per-SHA key silently let two runs
+  # for the same version (different commits) race each other to the
+  # same tag. Releases are rare, a global group is honest and safe.
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -367,9 +371,24 @@ jobs:
       # below). The generator stashes the attestation as an artefact
       # and the release job attaches it alongside the tarballs.
 
+  # ── Publish gate: the same OSV scan that gates PR merges ──────────
+  # The watcher dispatches this workflow against the PR branch in
+  # parallel with the PR's checks, so without this job a HIGH/CRITICAL
+  # CVE in the new libkrun version would block the bump PR while the
+  # release published anyway. Reusing osv-scan.yml via workflow_call
+  # keeps the publish gate and the PR gate identical. Known limitation:
+  # the scan reads version.txt from the dispatched ref, so a manual
+  # version_override dispatch is scanned at the pinned version instead
+  # of the override (manual, rare, and the override path is validated).
+  osv_gate:
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/osv-scan.yml
+
   # ── Publish all targets in one release ────────────────────────────
   release:
-    needs: [resolve-version, build, slsa_provenance]
+    needs: [resolve-version, build, slsa_provenance, osv_gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write       # required to create/update the release
@@ -389,7 +408,14 @@ jobs:
       - name: Download SLSA L3 provenance
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: ${{ needs.slsa_provenance.outputs.provenance-download-name }}
+          # generator_generic_slsa3.yml@v2.1.0 exposes no artifact-name
+          # output (its only workflow-level output is `release-id`), so
+          # referencing `provenance-download-name` evaluated to empty
+          # and download-artifact silently fell back to downloading ALL
+          # artifacts into per-artifact subdirectories. The artifact
+          # name is deterministic anyway: it's the `provenance-name`
+          # input passed to the generator above.
+          name: libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}.intoto.jsonl
           path: dist
 
       - name: Verify all three targets present
@@ -428,9 +454,14 @@ jobs:
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}
-          name: libkrun ${{ needs.resolve-version.outputs.libkrun_version }}
+          # The libkrunfw version is embedded in the name and body
+          # because a libkrunfw-only bump republishes this same tag
+          # with new bytes; the release page is the only place a
+          # consumer can see which kernel pairing the current assets
+          # actually carry.
+          name: libkrun ${{ needs.resolve-version.outputs.libkrun_version }} (libkrunfw ${{ needs.resolve-version.outputs.libkrunfw_version }})
           body: |
-            Pre-built libkrun + libkrunfw binaries.
+            Pre-built libkrun ${{ needs.resolve-version.outputs.libkrun_version }} + libkrunfw ${{ needs.resolve-version.outputs.libkrunfw_version }} binaries.
 
             Layout (inside each tarball):
             ```
@@ -547,3 +578,57 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
+
+  # ── Fail loud: track pipeline failures in an issue ─────────────────
+  # The SLSA ref regression broke releases for three days before anyone
+  # noticed, because a failed scheduled run notifies nobody. This job
+  # runs when any job above fails and opens (or comments on) a single
+  # `pipeline-failure` issue, so breakage surfaces in the repo itself.
+  notify:
+    needs:
+      [
+        resolve-version,
+        build,
+        collect-subjects,
+        slsa_provenance,
+        osv_gate,
+        release,
+        sync-checksums,
+      ]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Open or update the pipeline-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Label creation is idempotent-ish: fails if it exists, which
+          # is fine; the || true keeps the notifier alive either way.
+          gh label create pipeline-failure \
+            --repo "$REPO" --color B60205 \
+            --description "Automation pipeline needs attention" \
+            2>/dev/null || true
+          existing="$(gh issue list --repo "$REPO" --label pipeline-failure \
+            --state open --json number --jq '.[0].number // empty')"
+          body="Workflow \`$WORKFLOW\` failed: $RUN_URL"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" \
+              --title "Automation pipeline failure" \
+              --label pipeline-failure \
+              --body "$body"
+          fi
