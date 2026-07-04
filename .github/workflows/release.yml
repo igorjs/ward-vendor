@@ -344,16 +344,21 @@ jobs:
   # environment the attestation describes is the reusable workflow's
   # own runner, not ours.
   #
-  # SHA pin matches repo-config's slsa_generator_ref default (v2.1.0),
-  # so libkrun-builds, ward, and the JS pure-* family all move together
-  # when the generator is bumped.
+  # Tag pin (not SHA) is REQUIRED here, as the one exception to the
+  # repo's pin-everything-to-SHA rule: the generator resolves and
+  # verifies its pre-built builder binary from the release matching the
+  # tag ref, and hard-fails at runtime on SHA refs ("Invalid ref: ...
+  # Expected ref of the form refs/tags/vX.Y.Z"). Do not let Dependabot
+  # or a repo-config sync re-pin this line to a SHA. Keep the version
+  # in sync with repo-config's slsa_generator_ref default (v2.1.0) so
+  # libkrun-builds, ward, and the JS pure-* family move together.
   slsa_provenance:
     needs: [resolve-version, collect-subjects]
     permissions:
       id-token: write     # mint OIDC token for Sigstore signing
       contents: write     # upload provenance as a workflow artefact
       actions: read       # generator reads caller workflow metadata
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.collect-subjects.outputs.digest }}
       provenance-name: libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}.intoto.jsonl

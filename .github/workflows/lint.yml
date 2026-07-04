@@ -1,22 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Static analysis for the workflow files themselves. Runs actionlint on
-# every PR that touches .github/workflows/** and on every push to main.
+# every PR and on every push to main that touches .github/workflows/**.
 # Catches the kind of issues the security_reminder_hook flagged manually
 # during development (untrusted input interpolation, missing pins,
 # unreachable jobs, etc.).
 #
-# Promote this to a required status check in the main-branch ruleset
-# once it's been observed running cleanly at least once.
+# `actionlint` is a required status check in the main-branch ruleset,
+# so the pull_request trigger must NOT be path-filtered: a required
+# check that never reports leaves the PR stuck in "Expected" and
+# blocks auto-merge (this is what stalled the watch-upstream bump
+# PRs). The job takes seconds, so it simply runs on every PR.
 
 name: lint
 
 on:
   pull_request:
-    paths:
-      - .github/workflows/**
-      - .github/dependabot.yml
-      - .github/CODEOWNERS
   push:
     branches: [main]
     paths:

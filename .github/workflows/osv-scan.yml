@@ -5,16 +5,18 @@
 # SHA against upstream-checksums.txt, then scans the Cargo.lock.
 # Fails only on HIGH or CRITICAL severity (CVSS base score >= 7.0).
 # Advisories with no CVSS vector (Unknown severity) do not fail the build.
+#
+# `scan` is a required status check in the main-branch ruleset, so the
+# pull_request trigger must NOT be path-filtered: a required check that
+# never reports leaves the PR stuck in "Expected" and blocks auto-merge
+# (same failure mode that stalled the watch-upstream bump PRs on
+# actionlint/codeql). The scan costs a few minutes, so it simply runs
+# on every PR against the pinned version.
 
 name: osv-scan
 
 on:
   pull_request:
-    paths:
-      - version.txt
-      - upstream-checksums.txt
-      - build.sh
-      - .github/workflows/osv-scan.yml
   push:
     branches: [main]
     paths:

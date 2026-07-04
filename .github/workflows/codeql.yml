@@ -6,16 +6,17 @@
 # vulnerabilities (script injection via untrusted inputs, missing
 # permission blocks, unscoped tokens, unpinned actions, etc.).
 #
-# After this workflow runs cleanly on `main` for the first time,
-# promote it to a required status check in the main-branch ruleset
-# and re-enable "Require code scanning results" in the same ruleset.
+# `Analyse GitHub Actions workflows` is a required status check in the
+# main-branch ruleset, so the pull_request trigger must NOT be
+# path-filtered: a required check that never reports leaves the PR
+# stuck in "Expected" and blocks auto-merge (this is what stalled the
+# watch-upstream bump PRs). The actions analyser takes only a couple
+# of minutes, so it simply runs on every PR.
 
 name: codeql
 
 on:
   pull_request:
-    paths:
-      - .github/workflows/**
   push:
     branches: [main]
     paths:
