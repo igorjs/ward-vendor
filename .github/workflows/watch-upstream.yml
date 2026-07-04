@@ -229,3 +229,42 @@ jobs:
         run: |
           echo "Dispatching release.yml against ref: ${DISPATCH_REF}"
           gh workflow run release.yml --ref "${DISPATCH_REF}"
+
+  # ── Fail loud: track watcher failures in an issue ───────────────────
+  # A failed scheduled run notifies nobody; a broken watcher means no
+  # new upstream versions get picked up at all. Mirrors the notify job
+  # in release.yml: one shared `pipeline-failure` issue for the repo.
+  notify:
+    needs: [check]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Open or update the pipeline-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create pipeline-failure \
+            --repo "$REPO" --color B60205 \
+            --description "Automation pipeline needs attention" \
+            2>/dev/null || true
+          existing="$(gh issue list --repo "$REPO" --label pipeline-failure \
+            --state open --json number --jq '.[0].number // empty')"
+          body="Workflow \`$WORKFLOW\` failed: $RUN_URL"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" \
+              --title "Automation pipeline failure" \
+              --label pipeline-failure \
+              --body "$body"
+          fi
