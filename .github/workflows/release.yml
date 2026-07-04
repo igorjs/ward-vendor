@@ -552,6 +552,11 @@ jobs:
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app_token.outputs.token }}
+          # Commits via the GraphQL API: GitHub-signed (required by the
+          # ruleset) and authored by the App, not the triggering actor.
+          # Without this the commit is unsigned and the sync PR is
+          # unmergeable under "Require signed commits" (see PR #44).
+          sign-commits: true
           commit-message: "chore: update checksums for libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}"
           title: "chore: sync checksums for libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}"
           body: |
