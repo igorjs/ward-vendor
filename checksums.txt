@@ -10,6 +10,6 @@
 #
 # Format: <hex sha256>  libkrun-<version>-<target>.tar.gz
 
-76b1beaede9e60fc70f99a74c8741ae8912dd711a7a424f290357d1a45ac54bc  libkrun-1.18.1-x86_64-unknown-linux-gnu.tar.gz
-8f16386d0df27cfea08a49f949b6f3143bf8c9a89bf8edbbac7f9aa2c5933d86  libkrun-1.18.1-aarch64-unknown-linux-gnu.tar.gz
-df002a5f039f429fcf0c99b87d2a7d9ea091249b1b8d36161be58b3e0b0274bb  libkrun-1.18.1-aarch64-apple-darwin.tar.gz
+325cb6d5a7b173af8dd1de16fa736cf443fe70081eaf9f897c14660cbc94c190  libkrun-1.19.4-x86_64-unknown-linux-gnu.tar.gz
+54a327b446fa7a706b03124b793e053ef384834444fb07a04c70b019d2628f0e  libkrun-1.19.4-aarch64-apple-darwin.tar.gz
+5f60a04683b01efabf1936ab60a32158ce4490df03e2a5bd63774bff81fe91fd  libkrun-1.19.4-aarch64-unknown-linux-gnu.tar.gz
