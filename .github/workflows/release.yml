@@ -88,7 +88,7 @@ jobs:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
       - id: read
         name: Resolve libkrun + libkrunfw versions
         env:
@@ -162,12 +162,12 @@ jobs:
           # a clean release run confirms the allow-list is complete.
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Install build dependencies
         run: ${{ matrix.install_deps }}
 
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-05
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master @ 2026-05
         with:
           # Use `stable` rather than a hard-pin: libkrun's transitive
           # deps move with the Rust release train, and a hard-pin too
@@ -206,7 +206,7 @@ jobs:
           echo "Checksum for ${TARBALL}: ${SHA}"
 
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/${{ steps.checksum.outputs.tarball }}
 
@@ -373,7 +373,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Download all build artefacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -420,7 +420,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: libkrun-v${{ needs.resolve-version.outputs.libkrun_version }}
           name: libkrun ${{ needs.resolve-version.outputs.libkrun_version }}
@@ -487,7 +487,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Mint App installation token
         id: app_token
