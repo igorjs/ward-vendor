@@ -162,11 +162,13 @@ A daily cron (midnight AEST) checks `containers/libkrun` and
 `containers/libkrunfw` for new stable releases. When either is newer than the
 pinned version, the watcher:
 
-1. Bumps the relevant `*.txt` file on `main`.
-2. Refetches every upstream tarball and updates `upstream-checksums.txt` with
-   the new SHA-256 pins (so `build.sh` will refuse to use a tarball that
-   changed between watch-time and build-time).
-3. Pushes the bump commit and dispatches the release workflow.
+1. Refetches every upstream tarball and refreshes `upstream-checksums.txt`
+   with the new SHA-256 pins (so `build.sh` refuses a tarball that changed
+   between watch-time and build-time).
+2. Opens a PR bumping the version pin(s) and enables auto-merge; the PR
+   merges itself once the required status checks pass.
+3. Dispatches the release workflow against the PR branch, so the build
+   runs in parallel with the PR checks.
 
 Manual dispatches via the Actions tab work the same way and accept a
 `version_override`.
@@ -186,10 +188,12 @@ Manual dispatches via the Actions tab work the same way and accept a
     ├── CODEOWNERS                    review enforcement for sensitive paths
     ├── dependabot.yml                weekly bumps for SHA-pinned actions
     └── workflows/
-        ├── release.yml               build matrix + publish
+        ├── release.yml               build matrix + publish + checksums sync
         ├── watch-upstream.yml        daily upstream watcher
-        ├── lint.yml                  actionlint on every workflow change
-        └── codeql.yml                CodeQL `actions` analyser
+        ├── osv-scan.yml              OSV scan of libkrun's Cargo.lock, on every PR
+        ├── lint.yml                  actionlint, on every PR
+        ├── codeql.yml                CodeQL `actions` analyser, on every PR
+        └── dependabot-auto-merge.yml auto-merge for Dependabot patch/minor bumps
 ```
 
 ## Building locally
@@ -230,16 +234,17 @@ AEST), with `concurrency: { group: watch-upstream }` to serialise overlapping
 runs. When upstream has a new release, it:
 
 1. Mints a short-lived installation token via `actions/create-github-app-token`
-   using the `BOT_APP_ID` + `BOT_APP_PRIVATE_KEY` repo secrets.
+   using the `BOT_APP_CLIENT_ID` + `BOT_APP_PRIVATE_KEY` secrets.
 2. Opens a PR via `peter-evans/create-pull-request` using the App's token
    (commits are API-created, so they're auto-signed by GitHub).
 3. Enables auto-merge on the PR.
 4. Dispatches the release workflow against the PR branch so the build
    proceeds in parallel with the PR's review / status checks.
 
-The App's identity (visible in the PR as the author) is bypass-able in
-rulesets as a first-class actor. Add the App to the main-branch ruleset's
-bypass list so its PRs auto-merge without manual review.
+The bump PR auto-merges once the required status checks pass; the ruleset
+requires no approving reviews, so no bypass is involved. Every required
+check runs on every PR on purpose: a required check that never reports
+leaves the PR stuck in "Expected" and auto-merge waits forever.
 
 ### Manual dispatch
 
