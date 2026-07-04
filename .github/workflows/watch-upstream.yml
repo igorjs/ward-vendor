@@ -25,11 +25,14 @@
 #   upstream tarball that build.sh will fetch, so an upstream tamper
 #   between watch-time and build-time fails loud instead of flowing
 #   through silently.
-# - Version bumps land via `peter-evans/create-pull-request`, which
-#   creates commits via GitHub's REST API. API-created commits are
-#   auto-signed by GitHub with a verifying key, which means this
-#   workflow is compatible with a "Require signed commits" ruleset
-#   without setting up GPG keys for the bot.
+# - Version bumps land via `peter-evans/create-pull-request` with
+#   `sign-commits: true`, which creates commits through GitHub's
+#   GraphQL API. API-created commits are auto-signed by GitHub with a
+#   verifying key, so this workflow satisfies the "Require signed
+#   commits" ruleset without GPG keys for the bot, and the commit is
+#   authored by the App identity rather than whoever triggered the
+#   run. Without the flag the action commits via plain git: unsigned,
+#   which the ruleset rejects and auto-merge never completes.
 # - The release workflow is dispatched against the PR branch directly,
 #   so builds don't block on PR merge. The PR auto-merges once any
 #   required reviews / status checks clear, syncing main with the
@@ -194,6 +197,9 @@ jobs:
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app_token.outputs.token }}
+          # Commits via the GraphQL API: GitHub-signed (required by the
+          # ruleset) and authored by the App, not the triggering actor.
+          sign-commits: true
           commit-message: "chore: bump pinned libkrun/libkrunfw to latest upstream"
           title: "chore: bump pinned libkrun/libkrunfw to latest upstream"
           body: |
