@@ -632,11 +632,15 @@ jobs:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
 
-  # ── Fail loud: track pipeline failures in an issue ─────────────────
+  # ── Fail loud: track pipeline failures in a central issue ───────────
   # The SLSA ref regression broke releases for three days before anyone
   # noticed, because a failed scheduled run notifies nobody. This job
   # runs when any job above fails and opens (or comments on) a single
-  # `pipeline-failure` issue, so breakage surfaces in the repo itself.
+  # `[igorjs-forks/libkrun-builds] pipeline failure` issue in the central
+  # alerts repo (igorjs-iac/repo-config, which does have issues enabled).
+  # The composite action is distributed to this repo by repo-config via
+  # its manage_notify_action flag; it mints an App token scoped to the
+  # alerts repo so GITHUB_TOKEN needs no special grants here.
   notify:
     needs:
       [
@@ -651,7 +655,7 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      contents: read
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -660,28 +664,9 @@ jobs:
             api.github.com:443
             github.com:443
 
-      - name: Open or update the pipeline-failure issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          WORKFLOW: ${{ github.workflow }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          # Label creation is idempotent-ish: fails if it exists, which
-          # is fine; the || true keeps the notifier alive either way.
-          gh label create pipeline-failure \
-            --repo "$REPO" --color B60205 \
-            --description "Automation pipeline needs attention" \
-            2>/dev/null || true
-          existing="$(gh issue list --repo "$REPO" --label pipeline-failure \
-            --state open --json number --jq '.[0].number // empty')"
-          body="Workflow \`$WORKFLOW\` failed: $RUN_URL"
-          if [[ -n "$existing" ]]; then
-            gh issue comment "$existing" --repo "$REPO" --body "$body"
-          else
-            gh issue create --repo "$REPO" \
-              --title "Automation pipeline failure" \
-              --label pipeline-failure \
-              --body "$body"
-          fi
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - uses: ./.github/actions/notify-failure
+        with:
+          bot-app-client-id: ${{ secrets.BOT_APP_CLIENT_ID }}
+          bot-app-private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}

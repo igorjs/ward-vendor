@@ -247,16 +247,18 @@ jobs:
           echo "Dispatching release.yml against ref: ${DISPATCH_REF}"
           gh workflow run release.yml --ref "${DISPATCH_REF}"
 
-  # ── Fail loud: track watcher failures in an issue ───────────────────
+  # ── Fail loud: track watcher failures in a central issue ─────────────
   # A failed scheduled run notifies nobody; a broken watcher means no
-  # new upstream versions get picked up at all. Mirrors the notify job
-  # in release.yml: one shared `pipeline-failure` issue for the repo.
+  # new upstream versions get picked up at all. Uses the same shared
+  # notify-failure composite action as release.yml: files/updates a
+  # `[igorjs-forks/libkrun-builds] pipeline failure` issue in
+  # igorjs-iac/repo-config (which has issues enabled, unlike this repo).
   notify:
     needs: [check]
     if: failure()
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      contents: read
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -265,26 +267,9 @@ jobs:
             api.github.com:443
             github.com:443
 
-      - name: Open or update the pipeline-failure issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          WORKFLOW: ${{ github.workflow }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          gh label create pipeline-failure \
-            --repo "$REPO" --color B60205 \
-            --description "Automation pipeline needs attention" \
-            2>/dev/null || true
-          existing="$(gh issue list --repo "$REPO" --label pipeline-failure \
-            --state open --json number --jq '.[0].number // empty')"
-          body="Workflow \`$WORKFLOW\` failed: $RUN_URL"
-          if [[ -n "$existing" ]]; then
-            gh issue comment "$existing" --repo "$REPO" --body "$body"
-          else
-            gh issue create --repo "$REPO" \
-              --title "Automation pipeline failure" \
-              --label pipeline-failure \
-              --body "$body"
-          fi
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - uses: ./.github/actions/notify-failure
+        with:
+          bot-app-client-id: ${{ secrets.BOT_APP_CLIENT_ID }}
+          bot-app-private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
