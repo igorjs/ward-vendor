@@ -47,7 +47,17 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          # api.osv.dev serves the vulnerability queries; the rest is
+          # checkout plus the pinned upstream source and osv-scanner
+          # binary (both GitHub release-asset CDN hosts are listed
+          # because downloads alternate between them).
+          egress-policy: block
+          allowed-endpoints: >
+            api.osv.dev:443
+            codeload.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
