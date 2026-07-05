@@ -7,11 +7,11 @@
 # -----------------
 # - All third-party actions pinned to commit SHAs (immune to tag-swap).
 # - Top-level `permissions: {}` then promoted per-job, least privilege.
-# - StepSecurity harden-runner active on every job: `block` with an
-#   explicit allow-list on the gh-CLI-only jobs, `audit` on the
-#   build/publish jobs until their egress set (rustup, crates.io,
-#   Homebrew/apt, Sigstore, artifact storage) is confirmed from run
-#   insights and can be allow-listed without breaking releases.
+# - StepSecurity harden-runner active on every job: `block` with
+#   explicit allow-lists derived from the observed egress of a real
+#   release run, on every job where enforcement is supported. The
+#   arm64 and macOS build jobs stay `audit`: the harden-runner agent
+#   cannot monitor or block egress on those runners.
 # - Two-layer provenance for SLSA v1.0 Build L3 conformance:
 #   (1) Per-artefact in-toto attestation via actions/attest-build-
 #       provenance, signed by Sigstore + GitHub OIDC, generated inside
@@ -91,7 +91,9 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
       - id: read
         name: Resolve libkrun + libkrunfw versions
@@ -162,9 +164,40 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          # `audit` logs egress without blocking; flip to `block` once
-          # a clean release run confirms the allow-list is complete.
-          egress-policy: audit
+          # Enforcement is only supported on x86-64 Ubuntu runners; on
+          # ubuntu-24.04-arm and macos-15 the agent runs but cannot
+          # monitor or block, so `audit` is the honest setting there.
+          # The allow-list is the observed egress of the v1.19.4 run
+          # plus two defensive entries: objects.githubusercontent.com
+          # (GitHub release-asset downloads alternate between the two
+          # CDN hosts) and static.crates.io (crate downloads; the
+          # observed run served everything via index.crates.io but the
+          # CDN split varies by cargo version).
+          egress-policy: ${{ matrix.target == 'x86_64-unknown-linux-gnu' && 'block' || 'audit' }}
+          allowed-endpoints: >
+            api.github.com:443
+            azure.archive.ubuntu.com:80
+            azure.archive.ubuntu.com:443
+            codeload.github.com:443
+            dl.google.com:443
+            esm.ubuntu.com:443
+            fulcio.sigstore.dev:443
+            get.anchore.io:443
+            github.com:443
+            index.crates.io:443
+            motd.ubuntu.com:443
+            objects.githubusercontent.com:443
+            packages.microsoft.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            rekor.sigstore.dev:443
+            static.crates.io:443
+            static.rust-lang.org:443
+            timestamp.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            tuf-repo.github.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
@@ -316,7 +349,12 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          # Artifact download only: the results service plus the
+          # rotating Azure blob storage accounts behind it.
+          egress-policy: block
+          allowed-endpoints: >
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
 
       - name: Download all build artefacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -394,7 +432,13 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
@@ -520,7 +564,12 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
